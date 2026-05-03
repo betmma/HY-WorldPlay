@@ -1,5 +1,6 @@
 tqdm==4.67.1
 torch>=2.6.0
+decord==0.6.0
 peft==0.17.0
 openai==2.8.0
 einops==0.8.0

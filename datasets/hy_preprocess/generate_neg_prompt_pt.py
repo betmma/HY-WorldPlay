@@ -1,7 +1,10 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 
+_HY_WORLDPLAY_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_HY_WORLDPLAY_DIR))
 sys.path.append(os.path.abspath("."))
 
 import importlib.util
@@ -11,9 +14,7 @@ from loguru import logger
 
 _spec = importlib.util.spec_from_file_location(
     "preprocess_gamefactory_dataset",
-    os.path.join(
-        os.path.dirname(__file__), "hy_preprocess", "preprocess_gamefactory_dataset.py"
-    ),
+    os.path.join(os.path.dirname(__file__), "preprocess_gamefactory_dataset.py"),
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
