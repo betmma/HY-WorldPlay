@@ -168,3 +168,7 @@ ckpts/
 
 
 hyvideo/utils/rewrite/i2v_env.sh
+
+.*/
+model_ckpts/
+wandb/

@@ -10,18 +10,28 @@ SEED=1
 ASPECT_RATIO=16:9
 RESOLUTION=480p # Now we only provide the 480p model
 OUTPUT_PATH=./outputs/
-MODEL_PATH=                   # Path to pretrained hunyuanvideo-1.5 model
-AR_ACTION_MODEL_PATH=         # Path to our HY-World 1.5 autoregressive checkpoints
+MODEL_PATH=./model_ckpts/HunyuanVideo-1.5                   # Path to pretrained hunyuanvideo-1.5 model
+# AR_ACTION_MODEL_PATH=./model_ckpts/HY-WorldPlay/ar_model/diffusion_pytorch_model.safetensors         # Path to our HY-World 1.5 autoregressive checkpoints
+AR_ACTION_MODEL_PATH=./.trainOutput2/checkpoint-448/transformer/diffusion_pytorch_model.safetensors
 BI_ACTION_MODEL_PATH=         # Path to our HY-World 1.5 bidirectional checkpoints
 AR_DISTILL_ACTION_MODEL_PATH= # Path to our HY-World 1.5 autoregressive distilled checkpoints
-POSE='w-31'                   # Camera trajectory: pose string (e.g., 'w-31' means generating [1 + 31] latents) or JSON file path
+POSE=                   # Camera trajectory: pose string (e.g., 'w-31' means generating [1 + 31] latents) or JSON file path
+AUTOPLAY_DATA_JSON=../.debugSingle/20260514_130002_960297_flappy-bird/data.json          # Optional: path to generateAutoplayDataset.py data.json
+AUTOPLAY_DATA_INDEX=0         # Dataset item index to use when AUTOPLAY_DATA_JSON is set
 NUM_FRAMES=125
 WIDTH=832
 HEIGHT=480
 
+EXTRA_AUTOPLAY_ARGS=()
+if [ -n "$AUTOPLAY_DATA_JSON" ]; then
+  POSE=static                  # Use a fixed camera pose when feeding gameplay actions directly
+  EXTRA_AUTOPLAY_ARGS+=(--autoplay_data_json "$AUTOPLAY_DATA_JSON")
+  EXTRA_AUTOPLAY_ARGS+=(--autoplay_data_index "$AUTOPLAY_DATA_INDEX")
+fi
+
 # Configuration for faster inference
 # The maximum number recommended is 8.
-N_INFERENCE_GPU=8 # Parallel inference GPU count.
+N_INFERENCE_GPU=4 # Parallel inference GPU count.
 
 # Configuration for better quality
 REWRITE=false   # Enable prompt rewriting. Please ensure rewrite vLLM server is deployed and configured.
@@ -45,26 +55,7 @@ ENABLE_SR=false # Enable super resolution. When the NUM_FRAMES == 125, you can s
 #   --model_type 'bi'
 
 # inference with autoregressive model
-# torchrun --nproc_per_node=$N_INFERENCE_GPU hyvideo/generate.py  \
-#   --prompt "$PROMPT" \
-#   --image_path $IMAGE_PATH \
-#   --resolution $RESOLUTION \
-#   --aspect_ratio $ASPECT_RATIO \
-#   --video_length $NUM_FRAMES \
-#   --seed $SEED \
-#   --rewrite $REWRITE \
-#   --sr $ENABLE_SR --save_pre_sr_video \
-#   --pose "$POSE" \
-#   --output_path $OUTPUT_PATH \
-#   --model_path $MODEL_PATH \
-#   --action_ckpt $AR_ACTION_MODEL_PATH \
-#   --few_step false \
-#   --width $WIDTH \
-#   --height $HEIGHT \
-#   --model_type 'ar'
-
-# inference with autoregressive distilled model
-torchrun --nproc_per_node=$N_INFERENCE_GPU hyvideo/generate.py \
+torchrun --nproc_per_node=$N_INFERENCE_GPU hyvideo/generate.py  \
   --prompt "$PROMPT" \
   --image_path $IMAGE_PATH \
   --resolution $RESOLUTION \
@@ -74,12 +65,33 @@ torchrun --nproc_per_node=$N_INFERENCE_GPU hyvideo/generate.py \
   --rewrite $REWRITE \
   --sr $ENABLE_SR --save_pre_sr_video \
   --pose "$POSE" \
+  "${EXTRA_AUTOPLAY_ARGS[@]}" \
   --output_path $OUTPUT_PATH \
   --model_path $MODEL_PATH \
-  --action_ckpt $AR_DISTILL_ACTION_MODEL_PATH \
-  --few_step true \
-  --num_inference_steps 4 \
-  --model_type 'ar' \
-  --use_vae_parallel false \
-  --use_sageattn false \
-  --use_fp8_gemm false \
+  --action_ckpt $AR_ACTION_MODEL_PATH \
+  --few_step false \
+  --width $WIDTH \
+  --height $HEIGHT \
+  --model_type 'ar'
+
+# inference with autoregressive distilled model
+# torchrun --nproc_per_node=$N_INFERENCE_GPU hyvideo/generate.py \
+#   --prompt "$PROMPT" \
+#   --image_path $IMAGE_PATH \
+#   --resolution $RESOLUTION \
+#   --aspect_ratio $ASPECT_RATIO \
+#   --video_length $NUM_FRAMES \
+#   --seed $SEED \
+#   --rewrite $REWRITE \
+#   --sr $ENABLE_SR --save_pre_sr_video \
+#   --pose "$POSE" \
+#   "${EXTRA_AUTOPLAY_ARGS[@]}" \
+#   --output_path $OUTPUT_PATH \
+#   --model_path $MODEL_PATH \
+#   --action_ckpt $AR_DISTILL_ACTION_MODEL_PATH \
+#   --few_step true \
+#   --num_inference_steps 4 \
+#   --model_type 'ar' \
+#   --use_vae_parallel false \
+#   --use_sageattn false \
+#   --use_fp8_gemm false \
