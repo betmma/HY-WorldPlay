@@ -14,7 +14,7 @@
 # of rights and permissions under this agreement.
 # See the License for the specific language governing permissions and limitations under the License.
 
-import os
+import os,sys
 
 if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -30,6 +30,7 @@ from scipy.spatial.transform import Rotation as R
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import VideoFileClip, VideoClip
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from hyvideo.pipelines.worldplay_video_pipeline import HunyuanVideo_1_5_Pipeline
 from hyvideo.commons.parallel_states import initialize_parallel_state
 from hyvideo.commons.infer_state import initialize_infer_state
@@ -170,6 +171,16 @@ def pose_string_to_json(pose_string):
     return pose_json
 
 
+def static_pose_to_json(latent_num):
+    intrinsic = [
+        [969.6969696969696, 0.0, 960.0],
+        [0.0, 969.6969696969696, 540.0],
+        [0.0, 0.0, 1.0],
+    ]
+    pose = np.eye(4).tolist()
+    return {str(i): {"extrinsic": pose, "K": intrinsic} for i in range(latent_num)}
+
+
 def pose_to_input(pose_data, latent_num, tps=False):
     """
     Convert pose data to input tensors.
@@ -190,6 +201,9 @@ def pose_to_input(pose_data, latent_num, tps=False):
         if pose_data.endswith(".json"):
             # Load from JSON file
             pose_json = json.load(open(pose_data, "r"))
+        elif pose_data.lower() in ("static", "identity"):
+            # Fixed camera. Useful when actions come from a gameplay dataset.
+            pose_json = static_pose_to_json(latent_num)
         else:
             # Parse pose string
             pose_json = pose_string_to_json(pose_data)
@@ -281,6 +295,74 @@ def pose_to_input(pose_data, latent_num, tps=False):
     action_one_label = trans_one_label * 9 + rotate_one_label
 
     return torch.as_tensor(w2c_list), torch.as_tensor(intrinsic_list), action_one_label
+
+
+def read_json(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def resolve_path_from_json(json_path, path):
+    if os.path.isabs(path):
+        return path
+    return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(json_path)), path))
+
+
+def apply_autoplay_dataset_args(args):
+    item = read_json(args.autoplay_data_json)[args.autoplay_data_index]
+    args.prompt = item["prompt"]
+    args.image_path = resolve_path_from_json(args.autoplay_data_json, item["imagePath"])
+    args.autoplay_actions = item["actions"]
+
+
+def action_record_to_one_hots(action_record):
+    w_pressed = action_record["W"]
+    s_pressed = action_record["S"]
+    d_pressed = action_record["D"]
+    a_pressed = action_record["A"]
+    lr_pressed = action_record["LR"]
+    ll_pressed = action_record["LL"]
+    lu_pressed = action_record["LU"]
+    ld_pressed = action_record["LD"]
+
+    trans_one_hot = np.zeros(4, dtype=np.int32)
+    rotate_one_hot = np.zeros(4, dtype=np.int32)
+
+    if w_pressed and not s_pressed:
+        trans_one_hot[0] = 1
+    elif s_pressed and not w_pressed:
+        trans_one_hot[1] = 1
+
+    if d_pressed and not a_pressed:
+        trans_one_hot[2] = 1
+    elif a_pressed and not d_pressed:
+        trans_one_hot[3] = 1
+
+    if lr_pressed and not ll_pressed:
+        rotate_one_hot[0] = 1
+    elif ll_pressed and not lr_pressed:
+        rotate_one_hot[1] = 1
+
+    if lu_pressed and not ld_pressed:
+        rotate_one_hot[2] = 1
+    elif ld_pressed and not lu_pressed:
+        rotate_one_hot[3] = 1
+
+    return trans_one_hot, rotate_one_hot
+
+
+def actions_to_input(actions, latent_num):
+    trans_one_hot = np.zeros((latent_num, 4), dtype=np.int32)
+    rotate_one_hot = np.zeros((latent_num, 4), dtype=np.int32)
+    for latent_idx in range(1, latent_num):
+        frame_idx = latent_idx * 4
+        trans_one_hot[latent_idx], rotate_one_hot[latent_idx] = action_record_to_one_hots(
+            actions[frame_idx]
+        )
+
+    trans_one_label = one_hot_to_one_dimension(torch.tensor(trans_one_hot))
+    rotate_one_label = one_hot_to_one_dimension(torch.tensor(rotate_one_hot))
+    return trans_one_label * 9 + rotate_one_label
 
 
 def save_video(video, path):
@@ -740,7 +822,10 @@ def generate_video(args):
             "WARNING",
         )
 
-    viewmats, Ks, action = pose_to_input(args.pose, (args.video_length - 1) // 4 + 1)
+    latent_num = (args.video_length - 1) // 4 + 1
+    viewmats, Ks, action = pose_to_input(args.pose, latent_num)
+    if args.autoplay_data_json:
+        action = actions_to_input(args.autoplay_actions, latent_num)
 
     if task == "i2v":
         extra_kwargs["reference_image"] = args.image_path
@@ -836,9 +921,7 @@ def main():
         default="./assets/pose/test_forward_32_latents.json",
         help="Path to pose JSON file or pose string (e.g., 'w-3, right-0.5, d-4')",
     )
-    parser.add_argument(
-        "--prompt", type=str, required=True, help="Text prompt for video generation"
-    )
+    parser.add_argument("--prompt", type=str, default=None, help="Text prompt for video generation")
     parser.add_argument(
         "--negative_prompt",
         type=str,
@@ -937,6 +1020,21 @@ def main():
         type=str,
         default=None,
         help="Path to reference image for i2v (if provided, uses i2v mode)",
+    )
+    parser.add_argument(
+        "--autoplay_data_json",
+        type=str,
+        default=None,
+        help=(
+            "Path to generateAutoplayDataset.py data.json. When set, prompt, image_path, "
+            "and actions are read from the selected dataset item."
+        ),
+    )
+    parser.add_argument(
+        "--autoplay_data_index",
+        type=int,
+        default=0,
+        help="Dataset item index to use with --autoplay_data_json.",
     )
     parser.add_argument(
         "--output_path",
@@ -1045,6 +1143,9 @@ def main():
 
     args = parser.parse_args()
 
+    if args.autoplay_data_json:
+        apply_autoplay_dataset_args(args)
+    assert args.prompt is not None
     assert args.image_path is not None
 
     generate_video(args)
