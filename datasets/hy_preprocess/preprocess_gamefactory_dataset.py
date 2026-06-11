@@ -40,10 +40,11 @@ def load_vae_model(model_path: str, device: str = "cuda", dtype=None):
     if dtype is None:
         memory_limitation = get_gpu_memory()
         GB = 1024 * 1024 * 1024
-        if memory_limitation < 23 * GB:
-            dtype = torch.float16
-        else:
-            dtype = torch.float32
+        dtype = torch.float16
+        # if memory_limitation < 23 * GB:
+        #     dtype = torch.float16
+        # else:
+        #     dtype = torch.float32
 
     vae = hunyuanvideo_15_vae_w_cache.AutoencoderKLConv3D.from_pretrained(
         vae_path,
