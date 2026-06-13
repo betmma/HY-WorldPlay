@@ -56,6 +56,7 @@ class DistributedAutograd:
             ctx.world_size = world_size
             ctx.dim = dim
             ctx.input_shape = input_.shape
+            input_ = input_.contiguous()
 
             input_size = input_.size()
             output_size = (input_size[0] * world_size, ) + input_size[1:]
