@@ -29,3 +29,5 @@ moviepy==1.0.3
 torchdata
 pyarrow
 wandb
+cloudpickle
+remote_pdb

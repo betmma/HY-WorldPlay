@@ -859,6 +859,8 @@ def generate_video(args):
         os.makedirs(output_path, exist_ok=True)
 
         save_video_path = os.path.join(output_path, "gen.mp4")
+        if args.autoplay_data_json:
+            save_video_path = args.autoplay_data_json.rsplit('/',1)[0]+'/'+args.action_ckpt.rsplit('/',3)[-3]+'.mp4'
         save_video_sr_path = os.path.join(output_path, "gen_sr.mp4")
 
         # Determine which video to process for UI overlay
