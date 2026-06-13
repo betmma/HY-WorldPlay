@@ -18,6 +18,7 @@ from typing import Callable
 
 import torch
 import torch.nn as nn
+from einops import rearrange
 
 
 class ModulateDiT(nn.Module):
@@ -58,7 +59,8 @@ def modulate(x, shift=None, scale=None):
         return x
     elif shift is None:
         scale = scale.unsqueeze(0)
-        latent_length = scale.shape[1] // x.shape[0]  # latent length
+        scale = rearrange(scale, "B (N T) C -> (B N) T C", N=x.shape[0])
+        latent_length = scale.shape[1]  # latent length
         token_length = x.shape[1] // latent_length
         # operate on the hidden_states
         scale = scale.repeat_interleave(token_length, dim=1).type_as(x)
@@ -66,7 +68,8 @@ def modulate(x, shift=None, scale=None):
         return x * (1 + scale)
     elif scale is None:
         shift = shift.unsqueeze(0)
-        latent_length = shift.shape[1] // x.shape[0]  # latent length
+        shift = rearrange(shift, "B (N T) C -> (B N) T C", N=x.shape[0])
+        latent_length = shift.shape[1]  # latent length
         token_length = x.shape[1] // latent_length
         # operate on the hidden_states
         shift = shift.repeat_interleave(token_length, dim=1).type_as(x)
@@ -74,7 +77,10 @@ def modulate(x, shift=None, scale=None):
     else:
         shift = shift.unsqueeze(0)
         scale = scale.unsqueeze(0)
-        latent_length = shift.shape[1] // x.shape[0]  # latent length
+        shift = rearrange(shift, "B (N T) C -> (B N) T C", N=x.shape[0])
+        scale = rearrange(scale, "B (N T) C -> (B N) T C", N=x.shape[0])
+
+        latent_length = shift.shape[1]  # latent length
         token_length = x.shape[1] // latent_length
 
         scale = scale.repeat_interleave(token_length, dim=1).type_as(x)
@@ -96,7 +102,8 @@ def apply_gate(x, gate=None, tanh=False):
     if gate is None:
         return x
     gate = gate.unsqueeze(0)
-    latent_length = gate.shape[1] // x.shape[0]  # latent length
+    gate = rearrange(gate, "B (N T) C -> (B N) T C", N=x.shape[0])
+    latent_length = gate.shape[1]  # latent length
     token_length = x.shape[1] // latent_length
     gate = gate.repeat_interleave(token_length, dim=1).type_as(x)
     if tanh:

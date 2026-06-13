@@ -221,9 +221,26 @@ def sequence_parallel_attention(q, k, v,
                 # full attention within chunk i for j == i, causal for j < i
                 causal_mask[start_i:end_i, start_j:end_j] = 1
 
-        causal_mask = causal_mask.unsqueeze(0).unsqueeze(1) # 1, 1, S, S
-        causal_mask = causal_mask.expand(query.shape[0], 1, -1, -1)
-        causal_mask = causal_mask.to(torch.bool)  # Force bool dtype
+        causal_mask = causal_mask.to(torch.bool)
+        if text_mask is not None:
+            text_key_mask = text_mask.to(device=query.device, dtype=torch.bool)
+            if text_key_mask.shape[0] == 1 and query.shape[0] > 1:
+                text_key_mask = text_key_mask.expand(query.shape[0], -1)
+            assert text_key_mask.shape == (query.shape[0], text_seq_length), (
+                f"text_mask.shape: {text_key_mask.shape}, expected: "
+                f"{(query.shape[0], text_seq_length)}"
+            )
+            vision_key_mask = torch.ones(
+                (query.shape[0], vision_seq_length),
+                device=query.device,
+                dtype=torch.bool,
+            )
+            key_mask = torch.cat([text_key_mask, vision_key_mask], dim=1)
+            causal_mask = causal_mask.unsqueeze(0) & key_mask[:, None, :]
+            causal_mask = causal_mask.unsqueeze(1)
+        else:
+            causal_mask = causal_mask.unsqueeze(0).unsqueeze(1) # 1, 1, S, S
+            causal_mask = causal_mask.expand(query.shape[0], 1, -1, -1)
 
         query = query.transpose(1, 2)  # B * H * L * D
         key = key.transpose(1, 2)      # B * H * L * D

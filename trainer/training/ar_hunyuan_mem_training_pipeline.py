@@ -433,14 +433,18 @@ class TrainingPipeline(LoRAPipeline, ABC):
         )
 
         latents_concat = torch.concat([training_batch.noisy_model_input, cond_latents], dim=1)
+        text_batch_size = training_batch.prompt_embed.shape[0]
         training_batch.input_kwargs = {
             "hidden_states":
             latents_concat,
             "timestep":
             training_batch.timesteps.to(get_local_torch_device(),
                                         dtype=torch.bfloat16),
-            "timestep_txt": torch.tensor(0).unsqueeze(0).to(get_local_torch_device(),
-                                        dtype=torch.bfloat16), # for ar model, we set txt timestep to 0
+            "timestep_txt": torch.zeros(
+                text_batch_size,
+                device=get_local_torch_device(),
+                dtype=torch.bfloat16,
+            ), # for ar model, we set txt timestep to 0
             "text_states":
                 training_batch.prompt_embed,
             "text_states_2": None,

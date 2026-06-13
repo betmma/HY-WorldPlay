@@ -892,8 +892,20 @@ class ARHunyuanVideo_1_5_DiffusionTransformer(ModelMixin, ConfigMixin):
         # print('text embedding shape:', txt.shape, text_mask.shape)
         freqs_cis = (freqs_cos, freqs_sin) if freqs_cos is not None else None
 
-        # mask the txt tokens based on the text_mask
-        txt = txt[text_mask.bool().to(txt.device)].unsqueeze(0)
+        # The B=1 path keeps the old compact text sequence. For B>1, keep
+        # per-sample text batches so image and text attention batch dims match.
+        text_mask = text_mask.bool().to(txt.device)
+        if txt.shape[0] == 1:
+            txt = txt[text_mask].unsqueeze(0)
+            text_mask_for_attn = torch.ones(
+                (1, txt.shape[1]),
+                device=txt.device,
+                dtype=torch.bool,
+            )
+        else:
+            max_text_len = max(int(text_mask.sum(dim=1).max().item()), 1)
+            txt = txt[:, :max_text_len]
+            text_mask_for_attn = text_mask[:, :max_text_len]
 
         # Pass through double-stream blocks
         for index, block in enumerate(self.double_blocks):
@@ -914,7 +926,7 @@ class ARHunyuanVideo_1_5_DiffusionTransformer(ModelMixin, ConfigMixin):
                 vec_txt=vec_txt,
                 vec=vec,
                 freqs_cis=freqs_cis,
-                text_mask=None,      # we have masked txt tokens already, set None here
+                text_mask=text_mask_for_attn,
                 attn_param=self.attn_param,
                 is_flash=force_full_attn,
                 block_idx=index,
@@ -946,7 +958,7 @@ class ARHunyuanVideo_1_5_DiffusionTransformer(ModelMixin, ConfigMixin):
                     vec=vec,
                     txt_len=txt_seq_len,
                     freqs_cis=(freqs_cos, freqs_sin),
-                    text_mask=text_mask,
+                    text_mask=text_mask_for_attn,
                     attn_param=self.attn_param,
                     is_flash=force_full_attn,
                 )
